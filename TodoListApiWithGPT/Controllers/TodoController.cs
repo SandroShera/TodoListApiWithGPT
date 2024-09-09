@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using TodoListApiWithGPT.Data;
+using TodoListApiWithGPT.Data.Interfaces;
 using TodoListApiWithGPT.Models;
 
 namespace TodoListApiWithGPT.Controllers
@@ -9,97 +11,65 @@ namespace TodoListApiWithGPT.Controllers
     [ApiController]
     public class TodoController : ControllerBase
     {
-            private readonly TodoContext _context;
+        private readonly ITodoRepository _repository;
 
-            public TodoController(TodoContext context)
-            {
-                _context = context;
-            }
+        public TodoController(ITodoRepository repository)
+        {
+            _repository = repository;
+        }
 
-            [HttpGet]
-            public async Task<ActionResult<IEnumerable<TodoItem>>> GetTodoItems()
-            {
-                return await _context.TodoItems.ToListAsync();
-            }
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<TodoItem>>> GetTodoItems()
+        {
+            var items = await _repository.GetAllAsync();
+            return Ok(items);
+        }
 
-            [HttpGet("{id}")]
-            public async Task<ActionResult<TodoItem>> GetTodoItem(int id)
-            {
-            // Use AsNoTracking to ensure the entity is not being tracked
-            var item = await _context.TodoItems.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id);
-
+        [HttpGet("{id}")]
+        public async Task<ActionResult<TodoItem>> GetTodoItem(int id)
+        {
+            var item = await _repository.GetByIdAsync(id);
             if (item == null)
             {
                 return NotFound();
             }
-
-            return item;
+            return Ok(item);
         }
 
-            [HttpPost]
-            public async Task<ActionResult<TodoItem>> PostTodoItem(TodoItem todoItem)
-            {
-                await _context.TodoItems.AddAsync(todoItem);
-                await _context.SaveChangesAsync();
-                return CreatedAtAction(nameof(GetTodoItem), new { id = todoItem.Id }, todoItem);
-            }
+        [HttpPost]
+        public async Task<ActionResult<TodoItem>> PostTodoItem(TodoItem todoItem)
+        {
+            await _repository.AddAsync(todoItem);
+            return CreatedAtAction(nameof(GetTodoItem), new { id = todoItem.Id }, todoItem);
+        }
 
-            [HttpPut("{id}")]
-            public async Task<IActionResult> PutTodoItem(int id, TodoItem item)
-            {
+        [HttpPut("{id}")]
+        public async Task<IActionResult> PutTodoItem(int id, TodoItem item)
+        {
             if (id != item.Id)
             {
                 return BadRequest();
             }
 
-            // Check if the item exists and retrieve it for updating
-            var existingItem = await _context.TodoItems.FindAsync(id);
-            if (existingItem == null)
+            if (!await _repository.ExistsAsync(id))
             {
                 return NotFound();
             }
 
-            // Update the existing item
-            existingItem.Title = item.Title;
-            existingItem.Description = item.Description;
-            existingItem.IsCompleted = item.IsCompleted;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!TodoItemExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
+            await _repository.UpdateAsync(item);
             return NoContent();
         }
 
-            [HttpDelete("{id}")]
-            public async Task<IActionResult> DeleteTodoItem(int id)
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteTodoItem(int id)
+        {
+            if (!await _repository.ExistsAsync(id))
             {
-                var todoItem = await _context.TodoItems.FindAsync(id);
-                if (todoItem == null)
-                {
-                    return NotFound();
-                }
-
-                _context.TodoItems.Remove(todoItem);
-                await _context.SaveChangesAsync();
-                return NoContent();
+                return NotFound();
             }
 
-            private bool TodoItemExists(int id)
-            {
-                return _context.TodoItems.Any(e => e.Id == id);
-            }
+            await _repository.DeleteAsync(id);
+            return NoContent();
         }
+    }
 }
